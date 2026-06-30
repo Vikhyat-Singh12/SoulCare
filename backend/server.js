@@ -2,6 +2,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 
@@ -14,7 +15,8 @@ import feedbackRoutes from './routes/feedback.route.js';
 // Load env variables first
 dotenv.config();
 
-const __dirname = path.resolve();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 // const app = express();
 const PORT = process.env.PORT || 5001;
 
@@ -72,9 +74,9 @@ app.use('/api/feedback', feedbackRoutes);
 // ─── Production Static Files ──────────────────────────────────────────────────
 if (process.env.NODE_ENV === 'production') {
   console.log('🚀 Production mode — serving static frontend');
-  app.use(express.static(path.join(__dirname, 'frontend/dist')));
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
   app.get(/^\/(?!api).*/, (req, res) => {
-    res.sendFile(path.join(__dirname, 'frontend/dist', 'index.html'));
+    res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
   });
 }
 
