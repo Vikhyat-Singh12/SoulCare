@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5001";
+const BACKEND_URL = import.meta.env.MODE === "development" ? "http://localhost:5001" : "";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatDuration(seconds) {
