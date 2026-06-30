@@ -112,6 +112,5 @@ SoulCare is configured to be deployed as a **Single Web Service** (e.g., on Rend
 ---
 
 ## 🔒 Security & Privacy
-- **Anonymous IDs**: Students are identified by an anonymous ID to counsellors to protect privacy, while admins retain full visibility if necessary.
 - **Protected Routes**: React Router guards prevent unauthorized access to role-specific dashboards.
 - **Secure Endpoints**: All API routes are protected by robust JWT middleware verifying user roles.
