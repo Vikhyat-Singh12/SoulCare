@@ -1,13 +1,14 @@
 import { useEffect, useState, useRef } from "react";
-import { BrowserRouter as Router, Routes, Route, useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Volume2, VolumeX, Calendar, MessageCircle, BookOpen, Activity, Brain, Heart, Users, Bell, Settings, ChevronRight, Clock, Star, TrendingUp, Shield, Zap, Target, Play, Pause, Download, CheckCircle, AlertCircle, User, Video, Phone, Headphones, SkipBack, SkipForward, Volume1, HelpCircle } from "lucide-react";
 import { useAuthStore } from "../stores/useAuthStore";
+import { useSessionStore } from "../stores/useSessionStore";
 
 export default function StudentDashboard() {
-  const {user} = useAuthStore();
-  console.log(user);
+  const { user } = useAuthStore();
+  const { upcomingSessions, previousSessions, isLoading, getStudentSessions, cancelSession } = useSessionStore();
 
-
+  const [activeSessionTab, setActiveSessionTab] = useState("upcoming");
   const [chatSummary, setChatSummary] = useState(null);
   const [moodScore, setMoodScore] = useState(7.2);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -140,11 +141,73 @@ useEffect(() => {
     fetchSummary();
   }, []);
 
-  const upcomingSessions = [
-    { name: "Dr. Sarah Smith", role: "Licensed Counselor", time: "Today, 4:00 PM", status: "active", type: "video", avatar: "🧑‍⚕️",meetingLink:"https://meet.jit.si/SoulCare-9e35b4b9539d" },
-    { name: "Dr. Emily Johnson", role: "Cognitive Therapist", time: "Tomorrow, 11:00 AM", status: "pending", type: "audio", avatar: "👩‍⚕️" },
-    { name: "Support Group - Anxiety", role: "Peer Support", time: "Wed, 2:00 PM", status: "upcoming", type: "group", avatar: "👥" }
-  ];
+  // Fetch real sessions on mount
+  useEffect(() => {
+    if (user?.anonymous_id) {
+      getStudentSessions(user.anonymous_id);
+    }
+  }, [user?.anonymous_id]);
+
+  // ── Session helpers ──────────────────────────────────────────────────────
+
+  const getSessionTimes = (session) => {
+    const dateStr = new Date(session.date).toISOString().split('T')[0];
+    // Parse slot string like "10:30 AM"
+    const [timePart, period] = session.slot.split(' ');
+    let [h, m] = timePart.split(':').map(Number);
+    if (period === 'PM' && h !== 12) h += 12;
+    if (period === 'AM' && h === 12) h = 0;
+    const slotStart = new Date(`${dateStr}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
+    const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000);
+    return { slotStart, slotEnd };
+  };
+
+  /**
+   * Given a session from the store, compute its real-time display status.
+   * Upcoming: > 10 min before start
+   * Ready to Join: within 10 min before start up to session end (start + 30 min)
+   * In Progress: past start but within 30-min window
+   * Completed: past session end
+   */
+  const getSessionDisplayStatus = (session) => {
+    const { slotStart, slotEnd } = getSessionTimes(session);
+    const now = currentTime;
+    if (now > slotEnd) return 'completed';
+    if (now >= slotStart && now <= slotEnd) return 'in-progress';
+    if (now >= new Date(slotStart.getTime() - 10 * 60 * 1000) && now < slotStart) return 'ready';
+    return 'upcoming';
+  };
+
+  const formatSessionDate = (session) => {
+    const d = new Date(session.date);
+    const today = new Date();
+    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    const isToday = d.toDateString() === today.toDateString();
+    const isTomorrow = d.toDateString() === tomorrow.toDateString();
+    const dateLabel = isToday ? 'Today' : isTomorrow ? 'Tomorrow'
+      : d.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
+    return `${dateLabel} at ${session.slot}`;
+  };
+
+  const handleCancelSession = async (sessionId) => {
+    const confirmed = window.confirm('Are you sure you want to cancel this session? This cannot be undone.');
+    if (!confirmed) return;
+    await cancelSession(sessionId);
+  };
+
+  // Dynamically separate active and expired upcoming sessions
+  const activeUpcomingSessions = upcomingSessions.filter(s => getSessionDisplayStatus(s) !== 'completed');
+  
+  // Combine natively previous sessions with upcoming sessions that have expired based on current time
+  const dynamicallyExpiredSessions = upcomingSessions
+    .filter(s => getSessionDisplayStatus(s) === 'completed')
+    .map(s => ({ ...s, status: 'completed' })); // force status to completed for UI
+
+  const combinedPreviousSessions = [...dynamicallyExpiredSessions, ...previousSessions].sort((a, b) => {
+    const aTime = getSessionTimes(a).slotStart.getTime();
+    const bTime = getSessionTimes(b).slotStart.getTime();
+    return bTime - aTime; // most recent first
+  });
 
   const quickActions = [
     { title: "AI Chatbot", description: "Get instant support", icon: <Brain className="w-6 h-6" />, color: "from-blue-500 to-blue-600", urgent: false },
@@ -512,55 +575,206 @@ useEffect(() => {
                 </div>
               </div>
 
-              {/* Upcoming Sessions */}
+              {/* ── Sessions (Tabbed) ───────────────────────────────────────────── */}
               <div className="relative group">
                 <div className="absolute inset-0 backdrop-blur-2xl bg-gradient-to-br from-white/50 to-blue-50/30 rounded-2xl"></div>
                 <div className="relative bg-white/70 backdrop-blur-sm rounded-2xl border border-blue-100 p-6 hover:shadow-xl transition-all">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-semibold text-gray-800">Upcoming Sessions</h2>
-                    <Calendar className="w-5 h-5 text-blue-600" />
+                  
+                  {/* Tabs Header */}
+                  <div className="flex items-center gap-6 border-b border-gray-200 mb-6">
+                    <button 
+                      onClick={() => setActiveSessionTab('upcoming')}
+                      className={`flex items-center gap-2 pb-3 px-1 text-lg font-semibold transition-colors relative ${
+                        activeSessionTab === 'upcoming' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Upcoming Sessions
+                      {activeUpcomingSessions.length > 0 && (
+                        <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
+                          activeSessionTab === 'upcoming' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {activeUpcomingSessions.length}
+                        </span>
+                      )}
+                      {activeSessionTab === 'upcoming' && (
+                        <div className="absolute -bottom-[1px] left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>
+                      )}
+                    </button>
+
+                    <button 
+                      onClick={() => setActiveSessionTab('previous')}
+                      className={`flex items-center gap-2 pb-3 px-1 text-lg font-semibold transition-colors relative ${
+                        activeSessionTab === 'previous' ? 'text-gray-800' : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Previous Sessions
+                      {combinedPreviousSessions.length > 0 && (
+                        <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
+                          activeSessionTab === 'previous' ? 'bg-gray-200 text-gray-700' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {combinedPreviousSessions.length}
+                        </span>
+                      )}
+                      {activeSessionTab === 'previous' && (
+                        <div className="absolute -bottom-[1px] left-0 right-0 h-0.5 bg-gray-800 rounded-t-full"></div>
+                      )}
+                    </button>
+                    
+                    <div className="ml-auto pb-3 text-gray-400">
+                      {activeSessionTab === 'upcoming' ? <Calendar className="w-5 h-5 text-blue-500" /> : <CheckCircle className="w-5 h-5 text-gray-400" />}
+                    </div>
                   </div>
-                  <div className="space-y-4">
-                    {upcomingSessions.map((session, index) => (
-                      <div key={index} className="flex items-center p-4 bg-white/50 rounded-xl border border-blue-50 hover:bg-white/70 transition-all">
-                        <div className="text-2xl mr-4">{session.avatar}</div>
-                        <div className="flex-1">
-                          <h4 className="font-medium text-gray-800">{session.name}</h4>
-                          <p className="text-sm text-gray-600">{session.role}</p>
-                          <div className="flex items-center mt-1">
-                            <Clock className="w-4 h-4 text-gray-400 mr-1" />
-                            <span className="text-sm text-gray-500">{session.time}</span>
-                          </div>
+
+                  {/* Tab Content: Upcoming Sessions */}
+                  {activeSessionTab === 'upcoming' && (
+                    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300"
+                     style={{height:"400px"}}
+                    >
+                      {isLoading ? (
+                        <div className="flex items-center justify-center py-10">
+                          <div className="w-6 h-6 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
                         </div>
-                        <div className="flex items-center space-x-2">
-                          {session.type === 'video' && <Video className="w-4 h-4 text-blue-600" />}
-                          {session.type === 'audio' && <Phone className="w-4 h-4 text-green-600" />}
-                          {session.type === 'group' && <Users className="w-4 h-4 text-purple-600" />}
-                          {session.status === 'active' && (
-                            <button 
-                              onClick={() => window.open(session.meetingLink, '_blank')}
-                              className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transform hover:scale-105 transition-all"
-                            >
-                              Join Now
-                            </button>
-                          )}
-                          {session.status === 'pending' && (
-                            <button className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg cursor-not-allowed">
-                              Pending
-                            </button>
-                          )}
-                          {session.status === 'upcoming' && (
-                            <button
-                              onClick={() => handleNavigation('/session/details')}
-                              className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transform hover:scale-105 transition-all"
-                            >
-                              View Details
-                            </button>
-                          )}
+                      ) : activeUpcomingSessions.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-gray-400"
+                        style={{height:"400px"}}
+                        >
+                          <Calendar className="w-12 h-12 mb-3 text-gray-300" />
+                          <p className="font-medium text-gray-500">No upcoming appointments.</p>
+                          <Link to="/booking" className="mt-2 text-sm text-blue-500 hover:underline">Book a session now →</Link>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ) : (
+                        <div
+                          className="space-y-3 overflow-y-auto pr-1"
+                          style={{ height: '400px', scrollbarWidth: 'thin', scrollbarColor: '#bfdbfe transparent' }}
+                        >
+                          {activeUpcomingSessions.map((session) => {
+                            const displayStatus = getSessionDisplayStatus(session);
+                            const statusConfig = {
+                              'upcoming':    { label: 'Upcoming',      badge: 'bg-blue-100 text-blue-700' },
+                              'ready':       { label: 'Ready to Join', badge: 'bg-green-100 text-green-700' },
+                              'in-progress': { label: 'In Progress',   badge: 'bg-amber-100 text-amber-700' },
+                            }[displayStatus];
+
+                            return (
+                              <div key={session._id} className="flex items-start gap-4 p-4 bg-white/60 rounded-xl border border-blue-50 hover:bg-white/80 hover:shadow-sm transition-all">
+                                <div className="text-2xl mt-1">🧑‍⚕️</div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className="font-semibold text-gray-800 truncate">{session.c_name}</h4>
+                                    <span className={`shrink-0 px-2 py-0.5 text-xs font-semibold rounded-full ${statusConfig.badge}`}>
+                                      {statusConfig.label}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-blue-600 font-medium">Licensed Counselor</p>
+                                  <div className="flex items-center gap-1 mt-1 text-sm text-gray-500">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>{formatSessionDate(session)}</span>
+                                    <span className="mx-1">·</span>
+                                    <span>30 min</span>
+                                    <span className="mx-1">·</span>
+                                    {session.session_type === 'voice' ? <Phone className="w-3.5 h-3.5 inline" /> : session.session_type === 'chat' ? <MessageCircle className="w-3.5 h-3.5 inline" /> : <Video className="w-3.5 h-3.5 inline" />}
+                                    <span className="ml-0.5">{session.session_type === 'voice' ? 'Voice' : session.session_type === 'chat' ? 'Chat' : 'Video'}</span>
+                                  </div>
+                                  <p className="text-xs text-gray-400 mt-1">ID: {session.session_id || '—'}</p>
+                                </div>
+                                <div className="flex flex-col items-end gap-2 shrink-0">
+                                  {(displayStatus === 'ready' || displayStatus === 'in-progress') && (
+                                    <Link
+                                      to={`/session/${session.session_link.split('/').pop()}`}
+                                      className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg text-sm font-medium hover:shadow-lg hover:scale-105 transform transition-all"
+                                    >
+                                      Join Now
+                                    </Link>
+                                  )}
+                                  {displayStatus === 'upcoming' && (
+                                    <button
+                                      disabled
+                                      className="px-4 py-2 bg-gray-100 text-gray-400 cursor-not-allowed rounded-lg text-sm font-medium"
+                                    >
+                                      Join
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleCancelSession(session._id)}
+                                    className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 transition-all"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tab Content: Previous Sessions */}
+                  {activeSessionTab === 'previous' && (
+                    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300"
+                     style={{height:"400px"}}
+                    >
+                      {isLoading ? (
+                        <div className="flex items-center justify-center py-10">
+                          <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
+                        </div>
+                      ) : combinedPreviousSessions.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-gray-400"
+                          style={{height:"400px"}}
+                        >
+                          <CheckCircle className="w-12 h-12 mb-3 text-gray-200" />
+                          <p className="font-medium text-gray-400">No previous sessions found.</p>
+                        </div>
+                      ) : (
+                        <div
+                          className="space-y-3 overflow-y-auto pr-1"
+                          style={{ height: '400px', scrollbarWidth: 'thin', scrollbarColor: '#e5e7eb transparent' }}
+                        >
+                          {combinedPreviousSessions.map((session) => {
+                            const isCompleted = session.status === 'completed';
+                            return (
+                              <div key={session._id} className="flex items-start gap-4 p-4 bg-white/50 rounded-xl border border-gray-100 hover:bg-white/70 transition-all opacity-90">
+                                <div className="text-2xl mt-1 grayscale">🧑‍⚕️</div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className="font-semibold text-gray-700 truncate">{session.c_name}</h4>
+                                    <span className={`shrink-0 px-2 py-0.5 text-xs font-semibold rounded-full ${
+                                      isCompleted ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                                    }`}>
+                                      {isCompleted ? 'Completed' : 'Cancelled'}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-gray-500">Licensed Counselor</p>
+                                  <div className="flex items-center gap-1 mt-1 text-sm text-gray-400">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>{formatSessionDate(session)}</span>
+                                    <span className="mx-1">·</span>
+                                    <span>30 min</span>
+                                    <span className="mx-1">·</span>
+                                    {session.session_type === 'voice' ? <Phone className="w-3.5 h-3.5 inline" /> : session.session_type === 'chat' ? <MessageCircle className="w-3.5 h-3.5 inline" /> : <Video className="w-3.5 h-3.5 inline" />}
+                                    <span className="ml-0.5">{session.session_type === 'voice' ? 'Voice' : session.session_type === 'chat' ? 'Chat' : 'Video'}</span>
+                                  </div>
+                                </div>
+                                <div className="shrink-0">
+                                  {isCompleted ? (
+                                    <span className="flex items-center gap-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-500 font-medium">
+                                      <AlertCircle className="w-3.5 h-3.5" />
+                                      Feedback Pending
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center gap-1 text-sm text-gray-400">
+                                      <AlertCircle className="w-4 h-4" />
+                                      Cancelled
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

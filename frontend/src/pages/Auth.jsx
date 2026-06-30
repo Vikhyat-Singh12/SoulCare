@@ -14,9 +14,8 @@ export default function Auth() {
   });
   const [isLoading, setIsLoading] = useState(false);
 
-  const {signup,login} = useAuthStore();
-
-  const navigate = useNavigate(); 
+  const { signup, login } = useAuthStore();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -24,14 +23,28 @@ export default function Auth() {
 
     try {
       if (isLogin) {
-        const response = await login({
+        const user = await login({
           email: formData.email,
           password: formData.password,
         });
-        if (response) navigate("/");
+        
+        if (user) {
+          // Check if profile is incomplete
+          if (user.role === 'student' && !user.rollNo) {
+            navigate('/student-profile', { replace: true });
+          } else if (user.role === 'counsellor' && !user.specialization) {
+            navigate('/counsellor-profile', { replace: true });
+          } else {
+            navigate(`/${user.role}-dashboard`, { replace: true });
+          }
+        }
       } else {
-        const response = await signup(formData);
-        if (response) navigate("/");
+        const user = await signup(formData);
+        
+        if (user) {
+          // New signups (which are students by default) have incomplete profiles
+          navigate('/student-profile', { replace: true });
+        }
       }
     } catch (error) {
       console.error("Auth error:", error);

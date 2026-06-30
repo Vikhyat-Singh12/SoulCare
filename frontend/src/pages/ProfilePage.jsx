@@ -1,8 +1,11 @@
-import React, { useState, useRef } from "react";
-import { 
-  FiUser, FiAward, FiPhone, FiGlobe, FiBell, FiLock, FiCheckCircle, 
-  FiHome, FiHash, FiCalendar, FiEdit, FiCheck, FiCamera, FiTrash2 
+import React, { useState, useRef, useEffect } from "react";
+import {
+  FiUser, FiAward, FiPhone, FiGlobe, FiBell, FiLock, FiCheckCircle,
+  FiHome, FiHash, FiCalendar, FiEdit, FiCheck, FiCamera, FiTrash2
 } from 'react-icons/fi';
+import { useAuthStore } from "../stores/useAuthStore";
+
+// ─── Sub-components (UI unchanged) ───────────────────────────────────────────
 
 const FormField = ({ icon, name, ...props }) => (
   <div className="relative group">
@@ -13,7 +16,6 @@ const FormField = ({ icon, name, ...props }) => (
       name={name}
       onChange={props.onChange}
       value={props.value}
-      required
       className="w-full pl-12 pr-4 py-4 bg-white/40 backdrop-blur-sm border-2 border-transparent rounded-2xl placeholder-slate-500 text-slate-800 font-medium focus:outline-none focus:border-blue-400/80 focus:bg-white/60 transition-all duration-300"
       {...props}
     />
@@ -22,35 +24,62 @@ const FormField = ({ icon, name, ...props }) => (
 
 const ProfileInfoCard = ({ icon, label, value, gradient }) => (
   <div className={`group relative backdrop-blur-xl bg-white/20 border border-white/30 rounded-3xl p-6 hover:bg-white/30 transition-all duration-300 shadow-lg hover:shadow-blue-500/10 transform hover:-translate-y-1 overflow-hidden`}>
-     <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${gradient} opacity-80 group-hover:opacity-100 transition-opacity duration-300`}></div>
-     <div className="flex items-center gap-4">
-        <div className={`flex-shrink-0 w-12 h-12 bg-gradient-to-br ${gradient} rounded-xl flex items-center justify-center shadow-lg text-white`}>
-          {React.cloneElement(icon, { size: 24 })}
-        </div>
-        <div>
-          <p className="text-sm font-semibold text-slate-600">{label}</p>
-          <p className="text-lg font-bold text-slate-800 tracking-tight">{value}</p>
-        </div>
-     </div>
+    <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${gradient} opacity-80 group-hover:opacity-100 transition-opacity duration-300`}></div>
+    <div className="flex items-center gap-4">
+      <div className={`flex-shrink-0 w-12 h-12 bg-gradient-to-br ${gradient} rounded-xl flex items-center justify-center shadow-lg text-white`}>
+        {React.cloneElement(icon, { size: 24 })}
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-slate-600">{label}</p>
+        <p className="text-lg font-bold text-slate-800 tracking-tight">{value || '—'}</p>
+      </div>
+    </div>
   </div>
 );
 
+// ─── Main Component ───────────────────────────────────────────────────────────
+
 const Profile = () => {
-  const [profile, setProfile] = useState(null);
+  const { user, editProfile } = useAuthStore();
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef(null);
 
   const [formData, setFormData] = useState({
-    name: "", rollNo: "", college: "", stream: "", year: "", mobile: "",
-    language: "English", notifications: true, privacy: "Public",
-    imageFile: null, imageDataUrl: null,
+    name: "",
+    rollNo: "",
+    stream: "",
+    academicYear: "",
+    mobile: "",
+    imageFile: null,
+    imageDataUrl: null,
   });
 
+  // Pre-populate form from the authenticated user's data
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        name: user.name || "",
+        rollNo: user.rollNo || "",
+        stream: user.stream || "",
+        academicYear: user.academicYear || "",
+        mobile: user.mobile || "",
+        imageFile: null,
+        imageDataUrl: null,
+      });
+    }
+  }, [user]);
+
+  // Show edit form if profile is incomplete
+  useEffect(() => {
+    if (user && !user.rollNo) {
+      setIsEditing(true);
+    }
+  }, [user]);
+
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleImageChange = (e) => {
@@ -67,10 +96,49 @@ const Profile = () => {
     setFormData((prev) => ({ ...prev, imageFile: null, imageDataUrl: null }));
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
-  
+
   const triggerImageUpload = () => fileInputRef.current?.click();
-  const handleSubmit = (e) => { e.preventDefault(); setProfile(formData); };
-  const handleEdit = () => { setProfile(null); };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSaving(true);
+
+    // Build multipart/form-data payload
+    const data = new FormData();
+    data.append("name", formData.name);
+    data.append("rollNo", formData.rollNo);
+    data.append("stream", formData.stream);
+    data.append("academicYear", formData.academicYear);
+    data.append("mobile", formData.mobile);
+    if (formData.imageFile) {
+      data.append("image", formData.imageFile);
+    }
+
+    const updatedUser = await editProfile(data);
+    setIsSaving(false);
+    if (updatedUser) {
+      setIsEditing(false);
+    }
+  };
+
+  const handleEdit = () => {
+    // Re-populate form from latest user data before editing
+    if (user) {
+      setFormData({
+        name: user.name || "",
+        rollNo: user.rollNo || "",
+        stream: user.stream || "",
+        academicYear: user.academicYear || "",
+        mobile: user.mobile || "",
+        imageFile: null,
+        imageDataUrl: null,
+      });
+    }
+    setIsEditing(true);
+  };
+
+  // Derive the display image — prefer newly selected preview, then saved profile URL
+  const displayImage = formData.imageDataUrl || user?.profileUrl || null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden font-sans">
@@ -88,18 +156,18 @@ const Profile = () => {
       {/* Center Wrapper */}
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="w-full max-w-5xl">
-          {profile ? (
-            // --- PROFILE DISPLAY VIEW ---
+          {!isEditing ? (
+            // ── PROFILE DISPLAY VIEW ──────────────────────────────────────────
             <div className="space-y-8 animate-[fadeIn_0.5s_ease-in-out]">
               <div className="backdrop-blur-2xl bg-white/30 border border-white/40 rounded-3xl p-8 shadow-2xl shadow-blue-500/5">
                 <div className="flex flex-col lg:flex-row items-center justify-between gap-8 mb-10">
                   <div className="flex items-center gap-6">
                     <div className="relative group">
-                      {profile.imageDataUrl ? (
-                        <img src={profile.imageDataUrl} alt="Profile" className="w-28 h-28 object-cover rounded-full shadow-2xl border-4 border-white/80" />
+                      {displayImage ? (
+                        <img src={displayImage} alt="Profile" className="w-28 h-28 object-cover rounded-full shadow-2xl border-4 border-white/80" />
                       ) : (
                         <div className="w-28 h-28 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-xl border-4 border-white/80">
-                          <span className="text-5xl font-bold text-white tracking-wider">{profile.name?.charAt(0)}</span>
+                          <span className="text-5xl font-bold text-white tracking-wider">{user?.name?.charAt(0)}</span>
                         </div>
                       )}
                       <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-gradient-to-br from-emerald-400 to-green-500 rounded-full border-4 border-white/60 flex items-center justify-center">
@@ -108,12 +176,12 @@ const Profile = () => {
                     </div>
                     <div>
                       <h1 className="text-4xl font-extrabold tracking-tighter bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
-                        {profile.name}
+                        {user?.name}
                       </h1>
-                      <p className="text-lg font-medium text-slate-600">{profile.stream} • {profile.year} Year</p>
+                      <p className="text-lg font-medium text-slate-600">{user?.stream} {user?.academicYear ? `• ${user.academicYear} Year` : ''}</p>
                       <div className="mt-2 inline-flex items-center bg-blue-100/50 border border-blue-200/80 rounded-full px-3 py-1 text-sm font-semibold text-blue-700">
-                        <FiHome className="w-4 h-4 mr-2" />
-                        {profile.college}
+                        <FiHash className="w-4 h-4 mr-2" />
+                        {user?.anonymous_id}
                       </div>
                     </div>
                   </div>
@@ -124,21 +192,21 @@ const Profile = () => {
                   </button>
                 </div>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <ProfileInfoCard icon={<FiHash />} label="Roll Number" value={profile.rollNo} gradient="from-blue-400 to-cyan-400"/>
-                  <ProfileInfoCard icon={<FiPhone />} label="Mobile" value={profile.mobile} gradient="from-cyan-400 to-teal-400"/>
-                  <ProfileInfoCard icon={<FiGlobe />} label="Language" value={profile.language} gradient="from-teal-400 to-emerald-400"/>
-                  <ProfileInfoCard icon={<FiBell />} label="Notifications" value={profile.notifications ? "Enabled" : "Disabled"} gradient="from-purple-400 to-violet-400"/>
-                  <ProfileInfoCard icon={<FiLock />} label="Privacy" value={profile.privacy} gradient="from-violet-400 to-indigo-400"/>
-                  <ProfileInfoCard icon={<FiCheckCircle />} label="Status" value="Active" gradient="from-emerald-400 to-green-400"/>
+                  <ProfileInfoCard icon={<FiHash />} label="Roll Number" value={user?.rollNo} gradient="from-blue-400 to-cyan-400" />
+                  <ProfileInfoCard icon={<FiPhone />} label="Mobile" value={user?.mobile} gradient="from-cyan-400 to-teal-400" />
+                  <ProfileInfoCard icon={<FiAward />} label="Stream" value={user?.stream} gradient="from-teal-400 to-emerald-400" />
+                  <ProfileInfoCard icon={<FiCalendar />} label="Academic Year" value={user?.academicYear ? `${user.academicYear} Year` : ''} gradient="from-purple-400 to-violet-400" />
+                  <ProfileInfoCard icon={<FiLock />} label="Anonymous ID" value={user?.anonymous_id} gradient="from-violet-400 to-indigo-400" />
+                  <ProfileInfoCard icon={<FiCheckCircle />} label="Status" value="Active" gradient="from-emerald-400 to-green-400" />
                 </div>
               </div>
             </div>
           ) : (
-            // --- PROFILE EDIT/CREATE FORM ---
+            // ── PROFILE EDIT/CREATE FORM ──────────────────────────────────────
             <div className="space-y-8 animate-[fadeIn_0.5s_ease-in-out]">
               <div className="text-center">
                 <h1 className="text-5xl font-extrabold tracking-tighter bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">
-                  Create Your Profile
+                  {user?.rollNo ? 'Edit Profile' : 'Create Your Profile'}
                 </h1>
                 <p className="mt-2 text-lg text-slate-600 max-w-2xl mx-auto">
                   Fill in your details to create a personalized and engaging profile.
@@ -148,16 +216,15 @@ const Profile = () => {
                 <div className="backdrop-blur-2xl bg-white/30 border border-white/40 rounded-3xl p-8 shadow-2xl shadow-blue-500/5 space-y-6">
                   <h2 className="text-2xl font-bold text-slate-800">Personal Information</h2>
                   <div className="grid sm:grid-cols-2 gap-6">
-                    <FormField icon={<FiUser/>} name="name" type="text" placeholder="Your Full Name" value={formData.name} onChange={handleChange} />
-                    <FormField icon={<FiHash/>} name="rollNo" type="text" placeholder="Roll Number" value={formData.rollNo} onChange={handleChange}/>
-                    <FormField icon={<FiHome/>} name="college" type="text" placeholder="College Name" value={formData.college} onChange={handleChange}/>
-                    <FormField icon={<FiAward/>} name="stream" type="text" placeholder="e.g., Computer Science" value={formData.stream} onChange={handleChange}/>
-                    <FormField icon={<FiPhone/>} name="mobile" type="tel" placeholder="Mobile Number" value={formData.mobile} onChange={handleChange}/>
+                    <FormField icon={<FiUser />} name="name" type="text" placeholder="Your Full Name" value={formData.name} onChange={handleChange} required />
+                    <FormField icon={<FiHash />} name="rollNo" type="text" placeholder="Roll Number" value={formData.rollNo} onChange={handleChange} required />
+                    <FormField icon={<FiAward />} name="stream" type="text" placeholder="e.g., Computer Science" value={formData.stream} onChange={handleChange} required />
+                    <FormField icon={<FiPhone />} name="mobile" type="tel" placeholder="Mobile Number" value={formData.mobile} onChange={handleChange} required />
                     <div className="relative group">
                       <div className="absolute top-1/2 -translate-y-1/2 left-4 z-10 text-slate-500 group-focus-within:text-blue-500 transition-colors duration-300">
-                        <FiCalendar size={20}/>
+                        <FiCalendar size={20} />
                       </div>
-                      <select name="year" value={formData.year} onChange={handleChange} required className="w-full pl-12 pr-4 py-4 bg-white/40 backdrop-blur-sm border-2 border-transparent rounded-2xl text-slate-800 font-medium focus:outline-none focus:border-blue-400/80 focus:bg-white/60 transition-all duration-300 appearance-none">
+                      <select name="academicYear" value={formData.academicYear} onChange={handleChange} required className="w-full pl-12 pr-4 py-4 bg-white/40 backdrop-blur-sm border-2 border-transparent rounded-2xl text-slate-800 font-medium focus:outline-none focus:border-blue-400/80 focus:bg-white/60 transition-all duration-300 appearance-none">
                         <option value="" disabled>Select Academic Year</option>
                         <option value="1st">1st Year</option>
                         <option value="2nd">2nd Year</option>
@@ -171,8 +238,8 @@ const Profile = () => {
                   <h2 className="text-2xl font-bold text-slate-800 mb-4">Profile Photo</h2>
                   <div className="flex flex-col sm:flex-row items-center gap-6">
                     <div className="relative w-32 h-32 rounded-full bg-white/40 flex items-center justify-center overflow-hidden border-2 border-dashed border-slate-300">
-                      {formData.imageDataUrl ? (
-                        <img src={formData.imageDataUrl} alt="Preview" className="w-full h-full object-cover" />
+                      {displayImage ? (
+                        <img src={displayImage} alt="Preview" className="w-full h-full object-cover" />
                       ) : (
                         <FiCamera className="w-10 h-10 text-slate-400" />
                       )}
@@ -185,7 +252,7 @@ const Profile = () => {
                         </button>
                         {formData.imageDataUrl && (
                           <button type="button" onClick={removeImage} className="p-2 bg-white/80 border border-slate-300 rounded-lg shadow-sm hover:bg-red-50 transition-colors duration-200">
-                            <FiTrash2 className="text-red-500"/>
+                            <FiTrash2 className="text-red-500" />
                           </button>
                         )}
                         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
@@ -193,9 +260,15 @@ const Profile = () => {
                     </div>
                   </div>
                 </div>
-                <button type="submit" className="group relative w-full py-5 px-8 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white rounded-2xl font-bold text-lg shadow-2xl shadow-indigo-500/30 hover:shadow-3xl hover:shadow-indigo-500/40 transform hover:scale-[1.02] transition-all duration-300">
+                <button type="submit" disabled={isSaving} className="group relative w-full py-5 px-8 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white rounded-2xl font-bold text-lg shadow-2xl shadow-indigo-500/30 hover:shadow-3xl hover:shadow-indigo-500/40 transform hover:scale-[1.02] transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed">
                   <span className="relative z-10 flex items-center justify-center gap-3">
-                    <FiCheck className="group-hover:rotate-12 transition-transform duration-300" size={24}/> Save & View Profile
+                    {isSaving ? (
+                      <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <FiCheck className="group-hover:rotate-12 transition-transform duration-300" size={24} /> Save & View Profile
+                      </>
+                    )}
                   </span>
                 </button>
               </form>

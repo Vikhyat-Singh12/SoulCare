@@ -17,7 +17,9 @@ export default function CounsellorManagement() {
 
   useEffect(() => {
     getAllCounsellors();
-  }, [addCounsellor, deleteCounsellor]);
+  // Re-fetch when list length changes (after add/delete)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allCounsellors.length]);
 
   const [formData, setFormData] = useState({
     c_id: "",
@@ -232,9 +234,9 @@ export default function CounsellorManagement() {
     }
   };
 
-  const handleDelete = (_id) => {
+  const handleDelete = async (_id) => {
     try {
-      deleteCounsellor(_id);
+      await deleteCounsellor(_id);
     } catch (err) {
       console.error("Failed to delete counsellor:", err);
     }

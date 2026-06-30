@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Printer } from "lucide-react";
-// import "jspdf-autotable";
 import {
   Search,
   Filter,
@@ -10,66 +9,31 @@ import {
   User,
   MessageCircle,
 } from "lucide-react";
+import { useFeedbackStore } from "../stores/useFeedbackStore";
 
 export default function StudentReports() {
-  const [reports, setReports] = useState([
-    {
-      id: 1,
-      studentId: "STU123",
-      studentName: "Alex Johnson",
-      counsellor: "Dr. Smith",
-      date: "2024-03-15",
-      sessionType: "Individual",
-      status: "Improved",
-      feedback:
-        "Student showed significant improvement in anxiety management. Demonstrates better coping mechanisms and increased self-awareness.",
-      recommendations:
-        "Continue with breathing exercises and daily journaling. Schedule follow-up in 2 weeks.",
-      priority: "low",
-    },
-    {
-      id: 2,
-      studentId: "STU456",
-      studentName: "Emma Davis",
-      counsellor: "Dr. Patel",
-      date: "2024-03-14",
-      sessionType: "Group",
-      status: "Needs Support",
-      feedback:
-        "Student continues to experience high stress levels before examinations. Shows physical symptoms of anxiety.",
-      recommendations:
-        "Implement stress reduction techniques. Consider additional support sessions during exam periods.",
-      priority: "high",
-    },
-    {
-      id: 3,
-      studentId: "STU456",
-      studentName: "Emma Davis",
-      counsellor: "Dr. Patel",
-      date: "2024-03-14",
-      sessionType: "Group",
-      status: "Needs Support",
-      feedback:
-        "Student continues to experience high stress levels before examinations. Shows physical symptoms of anxiety.",
-      recommendations:
-        "Implement stress reduction techniques. Consider additional support sessions during exam periods.",
-      priority: "high",
-    },
-    {
-      id: 4,
-      studentId: "STU789",
-      studentName: "Michael Chen",
-      counsellor: "Dr. Williams",
-      date: "2024-03-13",
-      sessionType: "Individual",
-      status: "Stable",
-      feedback:
-        "Student maintains steady progress with social anxiety. Participating more in class discussions.",
-      recommendations:
-        "Encourage continued social engagement. Monthly check-ins recommended.",
-      priority: "medium",
-    },
-  ]);
+  const { allFeedback, getAllFeedback, isLoading } = useFeedbackStore();
+
+  // Fetch real feedback on mount
+  useEffect(() => {
+    getAllFeedback();
+  }, []);
+
+  // Map API feedback records to the shape the existing UI uses
+  const reports = allFeedback.map((f) => ({
+    id: f._id,
+    studentId: f.anonymous_id,
+    studentName: f.student_name,
+    counsellor: f.counsellor_name,
+    date: f.date ? new Date(f.date).toISOString().split('T')[0] : '',
+    sessionType: 'Individual',
+    status: f.status
+      ? f.status.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+      : 'Stable',
+    feedback: f.problems,
+    recommendations: f.recommendations,
+    priority: f.status === 'needs-support' ? 'high' : f.status === 'improved' ? 'low' : 'medium',
+  }));
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedReport, setSelectedReport] = useState(null);

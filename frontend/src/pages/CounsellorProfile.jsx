@@ -1,22 +1,25 @@
 import React from "react";
 import { Mail, Phone, Star, Heart, Badge } from "lucide-react";
+import { useAuthStore } from "../stores/useAuthStore";
 
 export default function CounsellorProfile() {
+  const { user } = useAuthStore();
+
+  // Merge real data from auth store with safe fallbacks
   const counsellor = {
-    id: "C-101",
-    name: "Dr. Emily Carter",
-    experience: "8 years",
-    specialization: "Stress Management",
-    email: "emily.carter@example.com",
-    phone: "+91 98765 43210",
-    image: "https://randomuser.me/api/portraits/women/44.jpg",
-    qualification: "PhD in Clinical Psychology",
-    availability: "Mon - Fri, 10:00 AM - 6:00 PM",
-    languages: ["English", "Hindi"],
-    bio:
-      "Passionate about helping students overcome stress, anxiety, and personal challenges through empathetic counselling and evidence-based practices. With over 8 years of experience in clinical psychology, I specialize in cognitive behavioral therapy and mindfulness-based interventions.",
+    id: user?.c_id || 'N/A',
+    name: user?.name || 'Counsellor',
+    experience: user?.experience ? `${user.experience} years` : 'N/A',
+    specialization: user?.specialization || 'Mental Health',
+    email: user?.email || '',
+    phone: user?.mobile || '',
+    image: user?.profileUrl || `https://i.pravatar.cc/150?u=${user?._id}`,
+    qualification: user?.qualification || '',
+    availability: 'Mon - Fri, 10:00 AM - 6:00 PM',
+    languages: ['English'],
+    bio: user?.about || 'Dedicated mental health professional committed to student wellbeing.',
     rating: 4.9,
-    totalSessions: 2847,
+    totalSessions: 0,
   };
 
   return (
@@ -131,7 +134,7 @@ export default function CounsellorProfile() {
               <div className="mt-6 p-6 bg-white/75 rounded-2xl border border-blue-100 shadow-inner">
                 <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                   <Heart className="w-6 h-6 text-red-500" />
-                  About Dr. Emily
+                  About {counsellor.name}
                 </h2>
                 <p className="text-gray-600 leading-relaxed text-lg">{counsellor.bio}</p>
 
